@@ -1,4 +1,8 @@
-use super::renderer;
+use crate::engine::texture;
+
+use super::renderer::vertex::{INDICES, VERTICES};
+use super::renderer::{self, renderer::create_render_pipeline};
+use wgpu::util::DeviceExt;
 
 pub struct State {
     pub surface: wgpu::Surface,
@@ -7,6 +11,12 @@ pub struct State {
     config: wgpu::SurfaceConfiguration,
     pub size: winit::dpi::PhysicalSize<u32>,
     window: winit::window::Window,
+    renderer: renderer::renderer::Renderer,
+    vertex_buffer: wgpu::Buffer,
+    num_vertices: u32,
+    index_buffer: wgpu::Buffer,
+    num_indices: u32,
+    texture: texture::Texture,
 }
 
 impl State {
@@ -67,6 +77,28 @@ impl State {
         };
         surface.configure(&device, &config);
 
+        let diffuse_bytes = include_bytes!("res/popcat.png");
+        let diffuse_texture =
+            texture::Texture::from_bytes(&device, &queue, diffuse_bytes, "popcat.png").unwrap();
+
+        let renderer = renderer::renderer::create_render_pipeline(
+            &device,
+            config.format,
+            &[&diffuse_texture.bind_group_layout],
+        );
+        let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Vertex Buffer"),
+            contents: bytemuck::cast_slice(VERTICES),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+        let num_vertices = VERTICES.len() as u32;
+
+        let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("index buffer"),
+            contents: bytemuck::cast_slice(INDICES),
+            usage: wgpu::BufferUsages::INDEX,
+        });
+        let num_indices = INDICES.len() as u32;
         State {
             window,
             surface,
@@ -74,6 +106,12 @@ impl State {
             queue,
             config,
             size,
+            renderer,
+            vertex_buffer,
+            num_vertices,
+            index_buffer,
+            num_indices,
+            texture: diffuse_texture,
         }
     }
 
@@ -94,7 +132,9 @@ impl State {
         false
     }
 
-    pub fn init(&mut self) {}
+    pub fn init(&mut self) {
+        println!("bruh init");
+    }
 
     pub fn update(&mut self) {}
 
@@ -108,7 +148,15 @@ impl State {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("Render Encoder"),
             });
-        renderer::draw::begin_draw(&mut encoder, &view);
+        {
+            let mut render_pass = renderer::renderer::begin_draw(&mut encoder, &view);
+            render_pass.set_pipeline(&self.renderer.render_pipeline);
+            render_pass.set_bind_group(0, &self.texture.bind_group, &[]);
+            render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+            render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+
+            render_pass.draw_indexed(0..self.num_indices, 0, 0..1);
+        }
 
         self.queue.submit(std::iter::once(encoder.finish()));
         output.present();
