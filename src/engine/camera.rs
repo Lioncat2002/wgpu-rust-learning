@@ -16,7 +16,7 @@ pub const OPENGL_TO_WGPU_MATRIX: cgmath::Matrix4<f32> = cgmath::Matrix4::new(
         0.0, 0.0, 0.0, 1.0,
     );
 impl Camera {
-    pub fn new(width: f32, height: f32, device: wgpu::Device) -> Camera {
+    pub fn new(width: f32, height: f32, device: &wgpu::Device) -> Camera {
         let camera_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 label: Some("Camera bind group layout"),

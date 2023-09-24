@@ -89,7 +89,7 @@ impl State {
         let diffuse_texture =
             texture::Texture::from_bytes(&device, &queue, diffuse_bytes, "popcat.png").unwrap();
 
-        let camera = Camera::new(config.width as f32, config.height as f32, device);
+        let camera = Camera::new(config.width as f32, config.height as f32, &device);
         let renderer = renderer::renderer::create_render_pipeline(
             &device,
             config.format,
@@ -123,7 +123,7 @@ impl State {
 
         let camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some(" camera bind group"),
-            layout: &camera_bind_group_layout,
+            layout: &camera.bind_group_layout,
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
                 resource: camera_buffer.as_entire_binding(),
