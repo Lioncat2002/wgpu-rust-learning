@@ -1,7 +1,10 @@
 use crate::engine::texture;
 
+use super::camera::Camera;
+use super::camera_controller::CameraController;
+use super::camera_uniform::{self, CameraUniform};
+use super::renderer;
 use super::renderer::vertex::{INDICES, VERTICES};
-use super::renderer::{self, renderer::create_render_pipeline};
 use wgpu::util::DeviceExt;
 
 pub struct State {
@@ -17,6 +20,11 @@ pub struct State {
     index_buffer: wgpu::Buffer,
     num_indices: u32,
     texture: texture::Texture,
+    camera: Camera,
+    camera_uniform: camera_uniform::CameraUniform,
+    camera_buffer: wgpu::Buffer,
+    camera_bind_group: wgpu::BindGroup,
+    camera_controller: CameraController,
 }
 
 impl State {
@@ -81,10 +89,14 @@ impl State {
         let diffuse_texture =
             texture::Texture::from_bytes(&device, &queue, diffuse_bytes, "popcat.png").unwrap();
 
+        let camera = Camera::new(config.width as f32, config.height as f32, device);
         let renderer = renderer::renderer::create_render_pipeline(
             &device,
             config.format,
-            &[&diffuse_texture.bind_group_layout],
+            &[
+                &diffuse_texture.bind_group_layout,
+                &camera.bind_group_layout,
+            ],
         );
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Vertex Buffer"),
@@ -99,6 +111,27 @@ impl State {
             usage: wgpu::BufferUsages::INDEX,
         });
         let num_indices = INDICES.len() as u32;
+
+        let mut camera_uniform = CameraUniform::new();
+        camera_uniform.update_view_proj(&camera);
+
+        let camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Camera Buffer"),
+            contents: bytemuck::cast_slice(&[camera_uniform]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+
+        let camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some(" camera bind group"),
+            layout: &camera_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: camera_buffer.as_entire_binding(),
+            }],
+        });
+
+        let camera_controller = CameraController::new(0.02);
+
         State {
             window,
             surface,
@@ -112,6 +145,11 @@ impl State {
             index_buffer,
             num_indices,
             texture: diffuse_texture,
+            camera,
+            camera_uniform,
+            camera_buffer,
+            camera_bind_group,
+            camera_controller,
         }
     }
 
@@ -129,14 +167,22 @@ impl State {
     }
 
     pub fn input(&mut self, event: &winit::event::WindowEvent) -> bool {
-        false
+        self.camera_controller.process_events(event)
     }
 
     pub fn init(&mut self) {
         println!("bruh init");
     }
 
-    pub fn update(&mut self) {}
+    pub fn update(&mut self) {
+        self.camera_controller.update_camera(&mut self.camera);
+        self.camera_uniform.update_view_proj(&self.camera);
+        self.queue.write_buffer(
+            &self.camera_buffer,
+            0,
+            bytemuck::cast_slice(&[self.camera_uniform]),
+        );
+    }
 
     pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
         let output = self.surface.get_current_texture()?;
@@ -152,6 +198,8 @@ impl State {
             let mut render_pass = renderer::renderer::begin_draw(&mut encoder, &view);
             render_pass.set_pipeline(&self.renderer.render_pipeline);
             render_pass.set_bind_group(0, &self.texture.bind_group, &[]);
+            render_pass.set_bind_group(1, &self.camera_bind_group, &[]);
+
             render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
             render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
 
