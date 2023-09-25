@@ -8,11 +8,12 @@ use super::camera_uniform::{self, CameraUniform};
 use super::instance::Instance;
 use super::renderer;
 use super::renderer::vertex::{INDICES, VERTICES};
+use super::texture::Texture;
 use wgpu::util::DeviceExt;
 
 use cgmath::prelude::*;
 
-const NUM_INSTANCES_PER_ROW: u32 = 10;
+const NUM_INSTANCES_PER_ROW: u32 = 20;
 const INSTANCE_DISPLACEMENT: cgmath::Vector3<f32> = cgmath::Vector3::new(
     NUM_INSTANCES_PER_ROW as f32 * 0.5,
     0.0,
@@ -25,12 +26,15 @@ pub struct State {
     config: wgpu::SurfaceConfiguration,
     pub size: winit::dpi::PhysicalSize<u32>,
     window: winit::window::Window,
+
+    depth_texture: Texture,
     renderer: renderer::renderer::Renderer,
     vertex_buffer: wgpu::Buffer,
     num_vertices: u32,
     index_buffer: wgpu::Buffer,
     num_indices: u32,
     texture: texture::Texture,
+
     camera: Camera,
     camera_uniform: camera_uniform::CameraUniform,
     camera_buffer: wgpu::Buffer,
@@ -131,11 +135,14 @@ impl State {
             usage: wgpu::BufferUsages::VERTEX,
         });
         let camera = Camera::new(config.width as f32, config.height as f32, &device);
+
+        let depth_texture =
+            texture::Texture::create_depth_texture(&device, &config, "depth texture");
         let renderer = renderer::renderer::create_render_pipeline(
             &device,
             config.format,
             &[
-                &diffuse_texture.bind_group_layout,
+                &Texture::create_bind_group_layout(&device),
                 &camera.bind_group_layout,
             ],
         );
@@ -181,6 +188,8 @@ impl State {
             config,
             size,
             renderer,
+            depth_texture,
+
             vertex_buffer,
             num_vertices,
             index_buffer,
@@ -207,6 +216,8 @@ impl State {
             self.config.width = new_size.width;
             self.config.height = new_size.height;
             self.surface.configure(&self.device, &self.config);
+            self.depth_texture =
+                texture::Texture::create_depth_texture(&self.device, &self.config, "depth texture");
         }
     }
 
@@ -239,7 +250,8 @@ impl State {
                 label: Some("Render Encoder"),
             });
         {
-            let mut render_pass = renderer::renderer::begin_draw(&mut encoder, &view);
+            let mut render_pass =
+                renderer::renderer::begin_draw(&mut encoder, &view, &self.depth_texture);
             render_pass.set_pipeline(&self.renderer.render_pipeline);
             render_pass.set_bind_group(0, &self.texture.bind_group, &[]);
             render_pass.set_bind_group(1, &self.camera_bind_group, &[]);

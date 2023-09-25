@@ -1,9 +1,10 @@
 use std::iter::Inspect;
 
-use wgpu::{BindGroupLayout, CommandEncoder, TextureView};
+use wgpu::{BindGroupLayout, CommandEncoder, TextureDimension, TextureView};
 use wgpu::{Device, ShaderModule, TextureFormat};
 
 use crate::engine::instance::InstanceRaw;
+use crate::engine::texture;
 
 use super::vertex::Vertex;
 pub struct Renderer {
@@ -53,7 +54,13 @@ pub fn create_render_pipeline(
             unclipped_depth: false,
             conservative: false,
         },
-        depth_stencil: None,
+        depth_stencil: Some(wgpu::DepthStencilState {
+            format: texture::Texture::DEPTH_FORMAT,
+            depth_write_enabled: true,
+            depth_compare: wgpu::CompareFunction::Less,
+            stencil: wgpu::StencilState::default(),
+            bias: wgpu::DepthBiasState::default(),
+        }),
         multisample: wgpu::MultisampleState {
             count: 1,
             mask: !0,
@@ -67,6 +74,7 @@ pub fn create_render_pipeline(
 pub fn begin_draw<'a>(
     encoder: &'a mut CommandEncoder,
     view: &'a TextureView,
+    depth_texture: &'a texture::Texture,
 ) -> wgpu::RenderPass<'a> {
     let render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
         label: Some("Render Pass"),
@@ -83,7 +91,14 @@ pub fn begin_draw<'a>(
                 store: true,
             },
         })],
-        depth_stencil_attachment: None,
+        depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+            view: &depth_texture.view,
+            depth_ops: Some(wgpu::Operations {
+                load: wgpu::LoadOp::Clear(1.0),
+                store: true,
+            }),
+            stencil_ops: None,
+        }),
     });
     render_pass
 }
