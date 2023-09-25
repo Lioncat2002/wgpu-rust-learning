@@ -1,12 +1,23 @@
+use std::iter::Inspect;
+
 use crate::engine::texture;
 
 use super::camera::Camera;
 use super::camera_controller::CameraController;
 use super::camera_uniform::{self, CameraUniform};
+use super::instance::Instance;
 use super::renderer;
 use super::renderer::vertex::{INDICES, VERTICES};
 use wgpu::util::DeviceExt;
 
+use cgmath::prelude::*;
+
+const NUM_INSTANCES_PER_ROW: u32 = 10;
+const INSTANCE_DISPLACEMENT: cgmath::Vector3<f32> = cgmath::Vector3::new(
+    NUM_INSTANCES_PER_ROW as f32 * 0.5,
+    0.0,
+    NUM_INSTANCES_PER_ROW as f32 * 0.5,
+);
 pub struct State {
     pub surface: wgpu::Surface,
     pub device: wgpu::Device,
@@ -25,6 +36,9 @@ pub struct State {
     camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
     camera_controller: CameraController,
+
+    instances: Vec<Instance>,
+    instance_buffer: wgpu::Buffer,
 }
 
 impl State {
@@ -88,7 +102,34 @@ impl State {
         let diffuse_bytes = include_bytes!("res/popcat.png");
         let diffuse_texture =
             texture::Texture::from_bytes(&device, &queue, diffuse_bytes, "popcat.png").unwrap();
+        let instances = (0..NUM_INSTANCES_PER_ROW)
+            .flat_map(|z| {
+                (0..NUM_INSTANCES_PER_ROW).map(move |x| {
+                    let position = cgmath::Vector3 {
+                        x: x as f32,
+                        y: 0.0,
+                        z: z as f32,
+                    } - INSTANCE_DISPLACEMENT;
 
+                    let rotation = if position.is_zero() {
+                        cgmath::Quaternion::from_axis_angle(
+                            cgmath::Vector3::unit_z(),
+                            cgmath::Deg(0.0),
+                        )
+                    } else {
+                        cgmath::Quaternion::from_axis_angle(position.normalize(), cgmath::Deg(0.0))
+                    };
+
+                    Instance { position, rotation }
+                })
+            })
+            .collect::<Vec<_>>();
+        let instance_data = instances.iter().map(Instance::to_raw).collect::<Vec<_>>();
+        let instance_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Instance Buffer"),
+            contents: bytemuck::cast_slice(&instance_data),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
         let camera = Camera::new(config.width as f32, config.height as f32, &device);
         let renderer = renderer::renderer::create_render_pipeline(
             &device,
@@ -150,6 +191,9 @@ impl State {
             camera_buffer,
             camera_bind_group,
             camera_controller,
+
+            instances,
+            instance_buffer,
         }
     }
 
@@ -201,9 +245,10 @@ impl State {
             render_pass.set_bind_group(1, &self.camera_bind_group, &[]);
 
             render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+            render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
             render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
 
-            render_pass.draw_indexed(0..self.num_indices, 0, 0..1);
+            render_pass.draw_indexed(0..self.num_indices, 0, 0..self.instances.len() as _);
         }
 
         self.queue.submit(std::iter::once(encoder.finish()));

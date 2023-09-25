@@ -1,5 +1,9 @@
+use std::iter::Inspect;
+
 use wgpu::{BindGroupLayout, CommandEncoder, TextureView};
 use wgpu::{Device, ShaderModule, TextureFormat};
+
+use crate::engine::instance::InstanceRaw;
 
 use super::vertex::Vertex;
 pub struct Renderer {
@@ -29,7 +33,7 @@ pub fn create_render_pipeline(
         vertex: wgpu::VertexState {
             module: &shader,
             entry_point: "vs_main",
-            buffers: &[Vertex::desc()],
+            buffers: &[Vertex::desc(), InstanceRaw::desc()],
         },
         fragment: Some(wgpu::FragmentState {
             module: &shader,
